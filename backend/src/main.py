@@ -1,4 +1,5 @@
 import json
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,9 +25,9 @@ app.add_middleware(
 
 class ImproveRequest(BaseModel):
     prompt: str
-    depth: str = "quick"
+    depth: Literal["quick", "thorough"] = "quick"
     target_model: str = "generic"
-    backend: str = "claude"
+    backend: Literal["claude", "ollama"] = "claude"
 
     @field_validator("prompt")
     @classmethod
@@ -36,10 +37,12 @@ class ImproveRequest(BaseModel):
         return v
 
 
-def get_adapter(backend: str, config) -> LLMAdapter:
+def get_adapter(backend: str, config, target_model: str = "generic") -> LLMAdapter:
     if backend == "claude":
-        return ClaudeAdapter(api_key=config.claude_api_key, model=config.claude_model)
-    return OllamaAdapter(base_url=config.ollama_base_url, model=config.ollama_model)
+        model = target_model if target_model and target_model != "generic" else config.claude_model
+        return ClaudeAdapter(api_key=config.claude_api_key, model=model)
+    model = target_model if target_model and target_model != "generic" else config.ollama_model
+    return OllamaAdapter(base_url=config.ollama_base_url, model=model)
 
 
 @app.post("/api/improve")
@@ -48,8 +51,9 @@ async def improve_prompt(request: ImproveRequest):
     generations = 2 if request.depth == "quick" else 5
 
     def generate():
+        engine = None
         try:
-            adapter = get_adapter(request.backend, config)
+            adapter = get_adapter(request.backend, config, request.target_model)
             scorer = Scorer(adapter)
             engine = GEPAEngine(adapter=adapter, scorer=scorer, generations=generations)
 
@@ -73,7 +77,21 @@ async def improve_prompt(request: ImproveRequest):
                     ]
                 yield f"data: {json.dumps(data)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            error_data: dict = {"type": "error", "message": str(e)}
+            if engine is not None and engine.pareto_front:
+                try:
+                    error_data["top_candidates"] = [
+                        {
+                            "prompt": c.prompt,
+                            "scores": c.scores,
+                            "reflection": c.reflection,
+                            "generation": c.generation,
+                        }
+                        for c in engine.top_candidates(3)
+                    ]
+                except Exception:
+                    pass
+            yield f"data: {json.dumps(error_data)}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 

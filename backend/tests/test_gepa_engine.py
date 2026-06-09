@@ -5,9 +5,9 @@ from src.llm_adapter import LLMAdapter
 
 class MockAdapter(LLMAdapter):
     def call(self, system: str, user: str) -> str:
-        if "weakness" in system.lower() or "diagnose" in system.lower() or "analyze" in system.lower():
-            return "needs clearer output format"
-        return "improved: be specific, return JSON, only use provided data"
+        if "rewriting expert" in system.lower():
+            return "improved: be specific, return JSON, only use provided data"
+        return "needs clearer output format"
 
     def call_structured(self, system: str, user: str, schema: dict) -> dict:
         return {"clarity": 70, "specificity": 60, "hallucination_resistance": 50}
