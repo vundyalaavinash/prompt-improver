@@ -1,24 +1,37 @@
 import json
 import re
 
-import anthropic
+import httpx
 
 from .llm_adapter import LLMAdapter
+
+CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
+ANTHROPIC_VERSION = "2023-06-01"
 
 
 class ClaudeAdapter(LLMAdapter):
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
-        self.client = anthropic.Anthropic(api_key=api_key)
+        self.api_key = api_key
         self.model = model
 
     def call(self, system: str, user: str) -> str:
-        message = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=system,
-            messages=[{"role": "user", "content": user}],
+        response = httpx.post(
+            CLAUDE_API_URL,
+            headers={
+                "x-api-key": self.api_key,
+                "anthropic-version": ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+            json={
+                "model": self.model,
+                "max_tokens": 1024,
+                "system": system,
+                "messages": [{"role": "user", "content": user}],
+            },
+            timeout=60.0,
         )
-        return message.content[0].text
+        response.raise_for_status()
+        return response.json()["content"][0]["text"]
 
     def call_structured(self, system: str, user: str, schema: dict) -> dict:
         system_with_json = (

@@ -3,27 +3,24 @@ from unittest.mock import MagicMock, patch
 from src.claude_adapter import ClaudeAdapter
 
 
-def test_call_returns_text():
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value.content = [MagicMock(text="hello")]
+def _mock_response(text: str) -> MagicMock:
+    mock = MagicMock()
+    mock.json.return_value = {"content": [{"text": text}]}
+    mock.raise_for_status = MagicMock()
+    return mock
 
-    with patch("src.claude_adapter.anthropic.Anthropic", return_value=mock_client):
+
+def test_call_returns_text():
+    with patch("src.claude_adapter.httpx.post", return_value=_mock_response("hello")):
         adapter = ClaudeAdapter(api_key="test-key")
         result = adapter.call(system="You are helpful.", user="Say hello.")
 
     assert result == "hello"
-    mock_client.messages.create.assert_called_once()
 
 
 def test_call_structured_parses_json():
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value.content = [
-        MagicMock(
-            text='Some text {"clarity": 80, "specificity": 70, "hallucination_resistance": 60} more text'
-        )
-    ]
-
-    with patch("src.claude_adapter.anthropic.Anthropic", return_value=mock_client):
+    text = 'Some text {"clarity": 80, "specificity": 70, "hallucination_resistance": 60} more text'
+    with patch("src.claude_adapter.httpx.post", return_value=_mock_response(text)):
         adapter = ClaudeAdapter(api_key="test-key")
         result = adapter.call_structured(
             system="Score this.",
@@ -36,10 +33,7 @@ def test_call_structured_parses_json():
 
 
 def test_call_structured_raises_on_no_json():
-    mock_client = MagicMock()
-    mock_client.messages.create.return_value.content = [MagicMock(text="no json here")]
-
-    with patch("src.claude_adapter.anthropic.Anthropic", return_value=mock_client):
+    with patch("src.claude_adapter.httpx.post", return_value=_mock_response("no json here")):
         adapter = ClaudeAdapter(api_key="test-key")
         with pytest.raises(ValueError, match="No JSON found"):
             adapter.call_structured(system="s", user="u", schema={})
