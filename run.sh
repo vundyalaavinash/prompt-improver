@@ -10,33 +10,84 @@ LOG_DIR="$REPO_ROOT/.logs"
 BACKEND_PORT=8000
 FRONTEND_PORT=5173
 
-# ── helpers ─────────────────────────────────────────────────────────────────
+# ── helpers ──────────────────────────────────────────────────────────────────
 
-log() { echo "[run.sh] $*"; }
+log()  { echo "[run.sh] $*"; }
+info() { echo "[run.sh] ✓ $*"; }
+warn() { echo "[run.sh] ⚠ $*"; }
+die()  { echo "[run.sh] ✗ $*"; exit 1; }
 
-check_env() {
-  if [ ! -f "$BACKEND_DIR/.env" ]; then
-    log "ERROR: backend/.env not found. Copy backend/.env.example and fill in your keys:"
-    log "  cp backend/.env.example backend/.env"
-    exit 1
-  fi
+# Resolve the Python 3 binary (prefer 3.12, fall back to 3.11, then 3.10+)
+find_python() {
+  for py in python3.12 python3.11 python3.10 python3; do
+    if command -v "$py" &>/dev/null; then
+      ver=$("$py" -c "import sys; print(sys.version_info[:2])" 2>/dev/null)
+      # require >= (3, 10)
+      if "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>/dev/null; then
+        echo "$py"
+        return
+      fi
+    fi
+  done
+  die "Python 3.10+ not found. Install it and re-run."
 }
 
-check_venv() {
-  if [ ! -f "$BACKEND_DIR/.venv/bin/activate" ]; then
-    log "ERROR: Python venv not found. Run:"
-    log "  cd backend && python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
-    exit 1
+# ── setup steps ───────────────────────────────────────────────────────────────
+
+setup_env() {
+  if [ -f "$BACKEND_DIR/.env" ]; then
+    info "backend/.env already exists — skipping"
+    return
   fi
+  log "Creating backend/.env from .env.example ..."
+  cp "$BACKEND_DIR/.env.example" "$BACKEND_DIR/.env"
+  warn "backend/.env created with defaults. Edit it if you need custom settings:"
+  warn "  \$EDITOR $BACKEND_DIR/.env"
 }
 
-check_node() {
-  if [ ! -d "$FRONTEND_DIR/node_modules" ]; then
-    log "ERROR: node_modules not found. Run:"
-    log "  cd frontend && npm install"
-    exit 1
+setup_venv() {
+  if [ -f "$BACKEND_DIR/.venv/bin/activate" ]; then
+    info "Python venv already exists — skipping"
+    return
   fi
+  PY=$(find_python)
+  log "Creating Python venv with $PY ..."
+  "$PY" -m venv "$BACKEND_DIR/.venv"
+  info "Venv created at backend/.venv"
+  log "Installing backend dependencies ..."
+  source "$BACKEND_DIR/.venv/bin/activate"
+  pip install --quiet --upgrade pip
+  pip install --quiet -r "$BACKEND_DIR/requirements.txt"
+  info "Backend dependencies installed"
 }
+
+setup_node() {
+  if [ -d "$FRONTEND_DIR/node_modules" ]; then
+    info "node_modules already exists — skipping"
+    return
+  fi
+  if ! command -v node &>/dev/null; then
+    die "Node.js not found. Install Node 18+ and re-run."
+  fi
+  if ! command -v npm &>/dev/null; then
+    die "npm not found. Install npm and re-run."
+  fi
+  log "Installing frontend dependencies ..."
+  cd "$FRONTEND_DIR" && npm install --silent
+  cd "$REPO_ROOT"
+  info "Frontend dependencies installed"
+}
+
+# Run all setup steps (idempotent — skips anything already done)
+setup_all() {
+  log "Running setup ..."
+  setup_env
+  setup_venv
+  setup_node
+  info "Setup complete."
+}
+
+# ── runtime helpers ───────────────────────────────────────────────────────────
 
 start_backend() {
   mkdir -p "$LOG_DIR"
@@ -46,7 +97,8 @@ start_backend() {
   uvicorn src.main:app --reload --port "$BACKEND_PORT" \
     > "$LOG_DIR/backend.log" 2>&1 &
   echo $! >> "$PID_FILE"
-  log "  backend PID $! → logs: .logs/backend.log"
+  log "  PID $! → .logs/backend.log"
+  cd "$REPO_ROOT"
 }
 
 start_frontend() {
@@ -56,22 +108,23 @@ start_frontend() {
   npm run dev -- --port "$FRONTEND_PORT" \
     > "$LOG_DIR/frontend.log" 2>&1 &
   echo $! >> "$PID_FILE"
-  log "  frontend PID $! → logs: .logs/frontend.log"
+  log "  PID $! → .logs/frontend.log"
+  cd "$REPO_ROOT"
 }
 
 stop_all() {
   if [ ! -f "$PID_FILE" ]; then
-    log "Nothing running (no .run.pid file)."
+    log "Nothing running (no .run.pid)."
     return
   fi
-  log "Stopping processes..."
+  log "Stopping processes ..."
   while read -r pid; do
     if kill -0 "$pid" 2>/dev/null; then
       kill "$pid" && log "  killed PID $pid"
     fi
   done < "$PID_FILE"
   rm -f "$PID_FILE"
-  log "Stopped."
+  info "Stopped."
 }
 
 status() {
@@ -89,15 +142,25 @@ status() {
   done < "$PID_FILE"
 }
 
-# ── commands ─────────────────────────────────────────────────────────────────
+print_urls() {
+  log ""
+  log "  Frontend → http://localhost:$FRONTEND_PORT"
+  log "  Backend  → http://localhost:$BACKEND_PORT"
+  log ""
+  log "Commands: ./run.sh stop | restart | status | logs"
+}
+
+# ── commands ──────────────────────────────────────────────────────────────────
 
 CMD="${1:-start}"
 
 case "$CMD" in
+  setup)
+    setup_all
+    ;;
+
   start)
-    check_env
-    check_venv
-    check_node
+    setup_all
     if [ -f "$PID_FILE" ]; then
       log "Already running. Use './run.sh restart' to restart."
       status
@@ -105,12 +168,7 @@ case "$CMD" in
     fi
     start_backend
     start_frontend
-    log ""
-    log "App running:"
-    log "  Frontend → http://localhost:$FRONTEND_PORT"
-    log "  Backend  → http://localhost:$BACKEND_PORT"
-    log ""
-    log "Use './run.sh logs' to tail logs, './run.sh stop' to stop."
+    print_urls
     ;;
 
   stop)
@@ -120,15 +178,11 @@ case "$CMD" in
   restart)
     stop_all
     sleep 1
-    check_env
-    check_venv
-    check_node
+    setup_all
     start_backend
     start_frontend
-    log ""
     log "Restarted."
-    log "  Frontend → http://localhost:$FRONTEND_PORT"
-    log "  Backend  → http://localhost:$BACKEND_PORT"
+    print_urls
     ;;
 
   status)
@@ -136,19 +190,20 @@ case "$CMD" in
     ;;
 
   logs)
-    log "Tailing .logs/backend.log and .logs/frontend.log (Ctrl+C to stop)..."
+    log "Tailing .logs/backend.log and .logs/frontend.log (Ctrl+C to stop) ..."
     tail -f "$LOG_DIR/backend.log" "$LOG_DIR/frontend.log" 2>/dev/null \
-      || log "No log files yet. Run './run.sh start' first."
+      || log "No log files yet — run './run.sh start' first."
     ;;
 
   *)
-    echo "Usage: ./run.sh [start|stop|restart|status|logs]"
+    echo "Usage: ./run.sh [command]"
     echo ""
-    echo "  start    Start backend + frontend"
-    echo "  stop     Stop both"
-    echo "  restart  Stop then start"
+    echo "  setup    Install all dependencies and create .env (safe to re-run)"
+    echo "  start    Setup (if needed) then start backend + frontend"
+    echo "  stop     Stop both services"
+    echo "  restart  Stop, setup (if needed), start"
     echo "  status   Show running PIDs"
-    echo "  logs     Tail both log files"
+    echo "  logs     Tail both log files live"
     exit 1
     ;;
 esac
