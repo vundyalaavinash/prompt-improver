@@ -4,12 +4,11 @@ from pydantic_settings import BaseSettings
 
 class Config(BaseSettings):
     backend: str = "claude"
-    claude_api_key: str = ""
-    claude_model: str = "claude-sonnet-4-6"
+    claude_model: str = "sonnet"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 @lru_cache

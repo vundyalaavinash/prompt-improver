@@ -40,7 +40,7 @@ class ImproveRequest(BaseModel):
 def get_adapter(backend: str, config, target_model: str = "generic") -> LLMAdapter:
     if backend == "claude":
         model = target_model if target_model and target_model != "generic" else config.claude_model
-        return ClaudeAdapter(api_key=config.claude_api_key, model=model)
+        return ClaudeAdapter(model=model)
     model = target_model if target_model and target_model != "generic" else config.ollama_model
     return OllamaAdapter(base_url=config.ollama_base_url, model=model)
 

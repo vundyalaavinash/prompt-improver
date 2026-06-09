@@ -1,37 +1,33 @@
 import json
 import re
-
-import httpx
+import subprocess
 
 from .llm_adapter import LLMAdapter
 
-CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
-ANTHROPIC_VERSION = "2023-06-01"
-
 
 class ClaudeAdapter(LLMAdapter):
-    def __init__(self, api_key: str, model: str = "claude-sonnet-4-6"):
-        self.api_key = api_key
+    """Calls the local `claude` CLI — uses Claude Code's existing auth, no API key needed."""
+
+    def __init__(self, model: str = "sonnet"):
         self.model = model
 
     def call(self, system: str, user: str) -> str:
-        response = httpx.post(
-            CLAUDE_API_URL,
-            headers={
-                "x-api-key": self.api_key,
-                "anthropic-version": ANTHROPIC_VERSION,
-                "content-type": "application/json",
-            },
-            json={
-                "model": self.model,
-                "max_tokens": 1024,
-                "system": system,
-                "messages": [{"role": "user", "content": user}],
-            },
-            timeout=60.0,
+        result = subprocess.run(
+            [
+                "claude",
+                "--print",
+                "--system-prompt", system,
+                "--model", self.model,
+                "--output-format", "text",
+                user,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
-        response.raise_for_status()
-        return response.json()["content"][0]["text"]
+        if result.returncode != 0:
+            raise RuntimeError(f"claude CLI error: {result.stderr.strip()}")
+        return result.stdout.strip()
 
     def call_structured(self, system: str, user: str, schema: dict) -> dict:
         system_with_json = (
