@@ -7,3 +7,6 @@ backend/tests/__pycache__/
 .env
 frontend/node_modules/
 frontend/dist/
+ORRTemplate.pdf
+ReferenceGuideForFMEA.pdf
+orr_fmea_proposal_v3.docx
