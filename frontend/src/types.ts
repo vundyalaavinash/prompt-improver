@@ -27,5 +27,5 @@ export interface GenerationEvent {
 export interface ImproveConfig {
   depth: "quick" | "thorough";
   target_model: string;
-  backend: "claude" | "ollama";
+  backend: "claude" | "ollama" | "devin";
 }

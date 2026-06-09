@@ -8,6 +8,7 @@ from pydantic import BaseModel, field_validator
 
 from .claude_adapter import ClaudeAdapter
 from .config import get_config
+from .devin_adapter import DevinAdapter
 from .gepa_engine import GEPAEngine
 from .llm_adapter import LLMAdapter
 from .ollama_adapter import OllamaAdapter
@@ -27,7 +28,7 @@ class ImproveRequest(BaseModel):
     prompt: str
     depth: Literal["quick", "thorough"] = "quick"
     target_model: str = "generic"
-    backend: Literal["claude", "ollama"] = "claude"
+    backend: Literal["claude", "ollama", "devin"] = "claude"
 
     @field_validator("prompt")
     @classmethod
@@ -38,11 +39,16 @@ class ImproveRequest(BaseModel):
 
 
 def get_adapter(backend: str, config, target_model: str = "generic") -> LLMAdapter:
+    effective = lambda default: target_model if target_model and target_model != "generic" else default
     if backend == "claude":
-        model = target_model if target_model and target_model != "generic" else config.claude_model
-        return ClaudeAdapter(model=model)
-    model = target_model if target_model and target_model != "generic" else config.ollama_model
-    return OllamaAdapter(base_url=config.ollama_base_url, model=model)
+        return ClaudeAdapter(model=effective(config.claude_model))
+    if backend == "devin":
+        return DevinAdapter(
+            api_key=config.devin_api_key,
+            model=effective(config.devin_model),
+            base_url=config.devin_base_url,
+        )
+    return OllamaAdapter(base_url=config.ollama_base_url, model=effective(config.ollama_model))
 
 
 @app.post("/api/improve")

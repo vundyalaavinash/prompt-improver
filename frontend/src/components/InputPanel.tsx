@@ -52,12 +52,13 @@ export function InputPanel({ onSubmit, isRunning }: InputPanelProps) {
           <select
             value={config.backend}
             onChange={(e) =>
-              setConfig({ ...config, backend: e.target.value as "claude" | "ollama" })
+              setConfig({ ...config, backend: e.target.value as "claude" | "ollama" | "devin" })
             }
             className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
-            <option value="claude">Claude</option>
+            <option value="claude">Claude (via CLI)</option>
             <option value="ollama">Ollama (local)</option>
+            <option value="devin">Devin</option>
           </select>
         </div>
 
