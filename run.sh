@@ -7,7 +7,7 @@ FRONTEND_DIR="$REPO_ROOT/frontend"
 PID_FILE="$REPO_ROOT/.run.pid"
 LOG_DIR="$REPO_ROOT/.logs"
 
-BACKEND_PORT=8000
+BACKEND_PORT="${BACKEND_PORT:-10051}"
 FRONTEND_PORT=5173
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ start_frontend() {
   mkdir -p "$LOG_DIR"
   log "Starting frontend on http://localhost:$FRONTEND_PORT ..."
   cd "$FRONTEND_DIR"
-  npm run dev -- --port "$FRONTEND_PORT" \
+  BACKEND_PORT="$BACKEND_PORT" npm run dev -- --port "$FRONTEND_PORT" \
     > "$LOG_DIR/frontend.log" 2>&1 &
   echo $! >> "$PID_FILE"
   log "  PID $! → .logs/frontend.log"
